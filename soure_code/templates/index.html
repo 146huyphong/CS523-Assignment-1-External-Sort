@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CS523 - External Sort Visualizer</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #ecf0f1; color: #2c3e50; padding: 10px 20px; margin: 0; }
+        .container { max-width: 98%; margin: 10px auto; background: #fff; padding: 25px; border-radius: 10px; box-shadow: 0 10px 20px rgba(0,0,0,0.1); }
+        h2 { text-align: center; border-bottom: 2px solid #bdc3c7; padding-bottom: 10px; margin-bottom: 20px;}
+        
+        .top-panels { display: flex; gap: 20px; margin-bottom: 20px; }
+        .panel { flex: 1; border: 2px solid #3498db; padding: 20px; border-radius: 8px; background: #f7f9fa; }
+        .upload-box { border: 2px dashed #95a5a6; padding: 20px; text-align: center; border-radius: 8px; margin-bottom: 15px; background: #fff;}
+        
+        button { background: #3498db; color: white; border: none; padding: 10px 20px; font-size: 16px; border-radius: 4px; cursor: pointer; transition: 0.2s; }
+        button:hover { background: #2980b9; }
+        button:disabled { background: #95a5a6; cursor: not-allowed; }
+        .btn-green { background: #27ae60; } .btn-green:hover { background: #2ecc71; }
+        .btn-orange { background: #e67e22; } .btn-orange:hover { background: #d35400; }
+        
+        #visualizer { display: none; margin-top: 20px; padding: 20px; background: #2c3e50; border-radius: 8px; color: white;}
+        .controls { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: #34495e; padding: 10px; border-radius: 6px;}
+        #step-msg { color: #f1c40f; text-align: center; font-size: 1.2rem; min-height: 30px; margin-bottom: 20px; font-weight: bold;}
+        
+        .hardware-box { border: 2px solid #7f8c8d; border-radius: 8px; padding: 15px; margin-bottom: 15px; background: #34495e;}
+        .hardware-title { color: #ecf0f1; margin-top: 0; font-size: 1.1rem; text-transform: uppercase; letter-spacing: 1px;}
+        
+        .array-container { display: flex; flex-wrap: wrap; gap: 10px; min-height: 45px; margin-bottom: 10px;}
+        .num-block { 
+            background: #2ecc71; color: #fff; width: 50px; height: 50px; 
+            display: flex; align-items: center; justify-content: center; 
+            font-weight: bold; border-radius: 6px; box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+            font-size: 0.9rem;
+        }
+        .num-block.frozen { background: #3498db; opacity: 0.8; border: 2px solid #2980b9; }
+        .num-block.run { background: #9b59b6; }
+        .num-block.output { background: #e74c3c; }
+        .run-label { width: 100%; color: #bdc3c7; font-size: 0.9rem; margin-top: 5px; }
+
+        #system-logs { display: none; background: #1e1e1e; color: #00ff00; padding: 15px; border-radius: 6px; font-family: monospace; white-space: pre-wrap; font-size: 0.95rem; margin-top: 15px; max-height: 300px; overflow-y: auto;}
+        #dataViewer { display: none; margin-top: 15px; background: #fff3cd; color: #856404; padding: 15px; border-radius: 4px; border: 1px solid #ffeeba; word-wrap: break-word; max-height: 200px; overflow-y: auto;}
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>CS523: External Sort (Repacking + Multi-Pass K-Way Merge)</h2>
+    
+    <div class="top-panels">
+        <div class="panel">
+            <h3 style="margin-top: 0; color: #2980b9;">1. Tạo Dữ Liệu Thử Nghiệm (Data Generator)</h3>
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <label><strong>Số lượng phần tử:</strong></label>
+                <input type="number" id="numElements" value="15" min="1" max="1000000" style="padding: 10px; border-radius: 4px; border: 1px solid #bdc3c7; width: 120px; font-weight: bold; font-size: 1rem;">
+                <button class="btn-orange" onclick="generateRandomFile()">Tạo & Tải Xuống</button>
+            </div>
+            <p id="gen-msg" style="color: #27ae60; font-weight: bold; display: none; margin-top: 10px; margin-bottom:0;"></p>
+        </div>
+
+        <div class="panel">
+            <h3 style="margin-top: 0; color: #2980b9;">2. Thiết Lập & Xử Lý Dữ Liệu</h3>
+            <div style="display: flex; gap: 20px; margin-bottom: 15px;">
+                <div style="flex: 1;">
+                    <label style="font-weight: bold; color: #34495e; display: flex; justify-content: space-between;">
+                        <span>Kích thước RAM (Chunk Size):</span>
+                        <label style="font-size: 0.85rem; color: #e67e22; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+                            <input type="checkbox" id="autoSectorCb" onchange="toggleAutoSector()"> 
+                            Auto Sector (512B)
+                        </label>
+                    </label>
+                    <input type="number" id="ramSize" value="3" min="2" max="100000" style="width: 100%; padding: 10px; margin-top: 5px; border-radius: 4px; border: 1px solid #bdc3c7; font-size: 1rem; box-sizing: border-box;">
+                </div>
+                <div style="flex: 1;">
+                    <label style="font-weight: bold; color: #34495e;">Số lượng File tạm (K-Way):</label>
+                    <input type="number" id="numFiles" value="2" min="1" max="100" style="width: 100%; padding: 10px; margin-top: 5px; border-radius: 4px; border: 1px solid #bdc3c7; font-size: 1rem; box-sizing: border-box;">
+                </div>
+            </div>
+
+            <div class="upload-box">
+                <input type="file" id="fileInput" accept=".bin" style="font-size: 1rem;">
+                <p style="color: #7f8c8d; margin-top: 10px;"><em>(File ≤ 40 số: Bật Visualizer. File > 40 số: Chạy tốc độ cao & In Log)</em></p>
+            </div>
+            <button id="sortBtn" onclick="uploadAndSort()" style="width: 100%; font-size: 1.1rem; padding: 12px;">Bắt Đầu Sắp Xếp Ngoại (Hybrid Mode)</button>
+        </div>
+    </div>
+
+    <div id="actionArea" style="display: none; text-align: center; margin-bottom: 20px;">
+        <a href="#" id="downloadBtn" class="btn-green" style="display: inline-block; text-decoration: none; padding: 10px 20px; border-radius: 4px; color: white; font-weight: bold; margin-bottom: 10px;">Tải File Đã Sắp Xếp</a>
+        <br>
+        <button class="btn-orange" onclick="viewBinaryData('source')">Xem Dữ Liệu Gốc</button>
+        <button class="btn-orange" onclick="viewBinaryData('sorted')">Xem Dữ Liệu Sắp Xếp</button>
+    </div>
+
+    <div id="dataViewer"></div>
+    <pre id="system-logs"></pre>
+
+    <div id="visualizer">
+        <div class="controls">
+            <button onclick="prevFrame()">&#9664; Lùi lại</button>
+            <span id="step-counter" style="font-weight: bold; font-size: 1.2rem; color: #ecf0f1;">Bước 0/0</span>
+            <button onclick="nextFrame()">Tiếp theo &#9654;</button>
+        </div>
+        
+        <div id="step-msg">Đang chuẩn bị...</div>
+
+        <div class="hardware-box">
+            <h3 class="hardware-title" id="ram-title">Bộ nhớ RAM (Sức chứa: 3 phần tử)</h3>
+            <div style="font-size: 0.9rem; color: #2ecc71; margin-bottom: 5px;">Đang hoạt động (Chuẩn bị ghi):</div>
+            <div id="ram-active" class="array-container"></div>
+            
+            <div style="font-size: 0.9rem; color: #3498db; margin-top: 10px; margin-bottom: 5px;" id="frozen-label">Bị đóng băng (Chờ Run sau):</div>
+            <div id="ram-frozen" class="array-container"></div>
+        </div>
+
+        <div class="hardware-box">
+            <h3 class="hardware-title">Ổ cứng (Disk)</h3>
+            <div id="disk-view" class="array-container"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let frames = [];
+    let currentFrameIdx = 0;
+    let currentOriginalFile = "";
+    let currentSortedFile = "";
+
+    async function generateRandomFile() {
+        const num = document.getElementById('numElements').value;
+        const msg = document.getElementById('gen-msg');
+        msg.style.display = 'block'; msg.style.color = '#e67e22'; msg.innerText = "Đang tạo file trên server...";
+
+        try {
+            const response = await fetch('/generate', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ num_elements: num })
+            });
+            const result = await response.json();
+            if (response.ok) {
+                msg.style.color = '#27ae60'; msg.innerText = `Đã tạo xong file ${num} phần tử! Đang tải về...`;
+                window.location.href = result.download_url;
+            } else { msg.style.color = '#c0392b'; msg.innerText = "Lỗi: " + result.error; }
+        } catch (error) { msg.style.color = '#c0392b'; msg.innerText = "Lỗi kết nối!"; }
+    }
+
+    async function uploadAndSort() {
+        const fileInput = document.getElementById('fileInput');
+        const sortBtn = document.getElementById('sortBtn');
+        const visualizer = document.getElementById('visualizer');
+        const sysLogs = document.getElementById('system-logs');
+        const actionArea = document.getElementById('actionArea');
+        const dataViewer = document.getElementById('dataViewer');
+
+        if (fileInput.files.length === 0) return alert('Vui lòng chọn file!');
+
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+        formData.append('ram_size', document.getElementById('ramSize').value);
+        formData.append('num_files', document.getElementById('numFiles').value);
+        formData.append('is_auto_sector', document.getElementById('autoSectorCb').checked);
+        
+        currentOriginalFile = fileInput.files[0].name;
+
+        const actualRamSize = document.getElementById('autoSectorCb').checked ? 64 : document.getElementById('ramSize').value;
+        document.getElementById('ram-title').innerText = `Bộ nhớ RAM (Sức chứa: ${actualRamSize} phần tử)`;
+
+        sortBtn.innerText = "Đang xử lý..."; sortBtn.disabled = true;
+        visualizer.style.display = 'none'; sysLogs.style.display = 'none';
+        actionArea.style.display = 'none'; dataViewer.style.display = 'none';
+
+        try {
+            const response = await fetch('/upload', { method: 'POST', body: formData });
+            const result = await response.json();
+
+            if (response.ok) {
+                currentSortedFile = result.download_url.split('/').pop();
+                document.getElementById('downloadBtn').href = result.download_url;
+                actionArea.style.display = 'block';
+
+                if (result.is_visualized) {
+                    frames = result.frames; currentFrameIdx = 0;
+                    visualizer.style.display = 'block';
+                    renderFrame(); 
+                } else {
+                    sysLogs.innerText = "HỆ THỐNG PHÁT HIỆN FILE LỚN (> 40 PHẦN TỬ).\nĐÃ BỎ QUA MÔ PHỎNG ĐỂ TỐI ƯU TỐC ĐỘ!\n\n--- NHẬT KÝ XỬ LÝ ---\n" + result.logs;
+                    sysLogs.style.display = 'block';
+                }
+            } else { alert("Lỗi: " + result.error); }
+        } catch (error) { alert("Lỗi kết nối!"); } 
+        finally { sortBtn.innerText = "Bắt Đầu Sắp Xếp Ngoại"; sortBtn.disabled = false; }
+    }
+
+    function renderFrame() {
+        if (frames.length === 0) return;
+        const frame = frames[currentFrameIdx];
+        
+        document.getElementById('step-counter').innerText = `Bước ${currentFrameIdx + 1} / ${frames.length}`;
+        document.getElementById('step-msg').innerText = frame.msg;
+
+        const ramActive = document.getElementById('ram-active');
+        const ramFrozen = document.getElementById('ram-frozen');
+        const diskView = document.getElementById('disk-view');
+        const frozenLabel = document.getElementById('frozen-label');
+
+        ramActive.innerHTML = ''; ramFrozen.innerHTML = ''; diskView.innerHTML = '';
+
+        frame.active.forEach(val => ramActive.innerHTML += `<div class="num-block">${val}</div>`);
+
+        if (frame.phase === "PHASE_1") {
+            frozenLabel.style.display = 'block';
+            frame.frozen.forEach(val => ramFrozen.innerHTML += `<div class="num-block frozen">${val}</div>`);
+            
+            frame.files_state.forEach((fileRuns, f_idx) => {
+                let fileHtml = `<div style="background: #2c3e50; padding: 15px; margin-bottom: 10px; border-radius: 6px; border: 1px solid #7f8c8d;">
+                    <div style="color: #f1c40f; font-weight: bold; margin-bottom: 10px;">FILE TẠM ${f_idx}:</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">`;
+
+                if (fileRuns.length === 0) fileHtml += `<span style="color: #7f8c8d; font-style: italic;">(Trống)</span>`;
+
+                fileRuns.forEach((run, r_idx) => {
+                    let runHtml = `<div style="display: flex; gap: 4px; padding: 4px; border: 2px dashed #95a5a6; border-radius: 4px; background: rgba(0,0,0,0.2);">`;
+                    run.forEach(val => { runHtml += `<div class="num-block run">${val}</div>`; });
+                    runHtml += `</div>`;
+                    if (r_idx < fileRuns.length - 1) runHtml += `<div style="color: #bdc3c7; font-weight: bold; align-self: center;">+</div>`;
+                    fileHtml += runHtml;
+                });
+                fileHtml += `</div></div>`;
+                diskView.innerHTML += fileHtml;
+            });
+            
+        } else {
+            frozenLabel.style.display = 'none'; 
+            let phase2Html = '';
+            
+            phase2Html += `<h4 style="color:#f1c40f; margin-top:0;">ĐANG ĐỌC (Rút dữ liệu):</h4>`;
+            frame.reading.forEach(fileState => {
+                phase2Html += `<div style="background: #2c3e50; padding: 10px; margin-bottom: 10px; border: 1px solid #7f8c8d; border-radius: 6px;">`;
+                phase2Html += `<div style="color: #bdc3c7; margin-bottom: 5px; font-size: 0.9em;">File Cũ ${fileState.file_idx}:</div>`;
+                phase2Html += `<div style="display: flex; flex-wrap: wrap; gap: 8px;">`;
+                fileState.runs.forEach((run, r_idx) => {
+                    let runHtml = `<div style="display: flex; gap: 4px; padding: 4px; border: 2px dashed #95a5a6; border-radius: 4px; background: rgba(0,0,0,0.2);">`;
+                    run.data.forEach((val, v_idx) => {
+                        if (v_idx < run.read) {
+                            runHtml += `<div class="num-block" style="background: #7f8c8d; opacity: 0.2;">${val}</div>`;
+                        } else {
+                            runHtml += `<div class="num-block run">${val}</div>`;
+                        }
+                    });
+                    runHtml += `</div>`;
+                    if (r_idx < fileState.runs.length - 1) runHtml += `<div style="color: #bdc3c7; align-self: center;">+</div>`;
+                    phase2Html += runHtml;
+                });
+                phase2Html += `</div></div>`;
+            });
+            
+            if (frame.phase === "PHASE_2") {
+                phase2Html += `<h4 style="color:#2ecc71; margin-top:15px;">ĐANG GHI MỚI:</h4>`;
+                frame.writing.forEach((fileRuns, f_idx) => {
+                    phase2Html += `<div style="background: #2c3e50; padding: 10px; margin-bottom: 10px; border: 1px solid #2ecc71; border-radius: 6px;">`;
+                    phase2Html += `<div style="color: #2ecc71; margin-bottom: 5px; font-size: 0.9em;">File Mới ${f_idx} (Pass này):</div>`;
+                    phase2Html += `<div style="display: flex; flex-wrap: wrap; gap: 8px;">`;
+                    fileRuns.forEach((run, r_idx) => {
+                        let runHtml = `<div style="display: flex; gap: 4px; padding: 4px; border: 2px dashed #2ecc71; border-radius: 4px; background: rgba(0,0,0,0.2);">`;
+                        run.forEach(val => runHtml += `<div class="num-block run">${val}</div>`);
+                        runHtml += `</div>`;
+                        if (r_idx < fileRuns.length - 1) runHtml += `<div style="color: #bdc3c7; align-self: center;">+</div>`;
+                        phase2Html += runHtml;
+                    });
+                    phase2Html += `</div></div>`;
+                });
+            } else {
+                phase2Html += `<h4 style="color:#e74c3c; margin-top:15px;">FILE KẾT QUẢ ĐÍCH:</h4>`;
+                phase2Html += `<div style="display: flex; flex-wrap: wrap; gap: 4px; padding: 10px; border: 2px solid #e74c3c; border-radius: 4px; background: rgba(0,0,0,0.2);">`;
+                if(frame.writing && frame.writing.length > 0 && frame.writing[0]) {
+                    frame.writing[0].forEach(run => {
+                        run.forEach(val => phase2Html += `<div class="num-block output">${val}</div>`);
+                    });
+                }
+                phase2Html += `</div>`;
+            }
+            
+            diskView.innerHTML = phase2Html;
+        }
+    }
+
+    function nextFrame() { if (currentFrameIdx < frames.length - 1) { currentFrameIdx++; renderFrame(); } }
+    function prevFrame() { if (currentFrameIdx > 0) { currentFrameIdx--; renderFrame(); } }
+    
+    document.addEventListener('keydown', (e) => {
+        if (document.getElementById('visualizer').style.display === 'block') {
+            if (e.key === 'ArrowRight') nextFrame();
+            if (e.key === 'ArrowLeft') prevFrame();
+        }
+    });
+
+    async function viewBinaryData(type) {
+        const viewer = document.getElementById('dataViewer');
+        const filename = (type === 'source') ? currentOriginalFile : currentSortedFile;
+        viewer.style.display = 'block'; viewer.innerHTML = `<em>Đang trích xuất file ${filename}...</em>`;
+        try {
+            const response = await fetch('/read/' + filename);
+            const result = await response.json();
+            if (response.ok) {
+                const title = type === 'source' ? "DỮ LIỆU GỐC" : "DỮ LIỆU ĐÃ SẮP XẾP";
+                viewer.innerHTML = `<strong>${title} (${result.data.length} phần tử):</strong><br><br>[ ${result.data.join(' , ')} ]`;
+            } else { viewer.innerHTML = `<strong>Lỗi:</strong> ${result.error}`; }
+        } catch (error) { viewer.innerHTML = `<strong>Lỗi kết nối:</strong> ${error.message}`; }
+    }
+
+    function toggleAutoSector() {
+        const cb = document.getElementById('autoSectorCb');
+        const ramInput = document.getElementById('ramSize');
+        if (cb.checked) {
+            ramInput.value = 64; 
+            ramInput.disabled = true;
+            ramInput.style.backgroundColor = "#ecf0f1";
+        } else {
+            ramInput.disabled = false;
+            ramInput.style.backgroundColor = "#fff";
+        }
+    }
+</script>
+
+</body>
+</html>
