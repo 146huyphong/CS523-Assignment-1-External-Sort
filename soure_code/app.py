@@ -11,7 +11,23 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 FLOAT_FORMAT = 'd'
 FLOAT_SIZE = struct.calcsize(FLOAT_FORMAT)
 
-def external_sort_hybrid(input_path, output_path, ram_size, num_files, skip_visualization=False):
+def external_sort(input_path, output_path, ram_size, num_files, skip_visualization=False):
+    """
+    Thực thi thuật toán Sắp xếp ngoại (Kết hợp Repacking và Multi-Pass K-Way Merge).
+
+    Parameters:
+        input_path (str): Đường dẫn tới tập tin nhị phân nguồn cần sắp xếp.
+        output_path (str): Đường dẫn lưu tập tin nhị phân kết quả.
+        ram_size (int): Sức chứa tối đa của RAM (số lượng phần tử được nạp cùng lúc).
+        num_files (int): Số lượng tập tin tạm tối đa được phép mở đồng thời.
+        skip_visualization (bool): Bật cờ này (True) để bỏ qua việc chụp ảnh UI, tối ưu tốc độ cho file lớn.
+
+    Returns:
+        tuple: (logs, frames)
+            - logs (list of str): Nhật ký hệ thống ghi lại các bước xử lý (dùng để in log text).
+            - frames (list of dict): Cuộn phim chứa trạng thái RAM/Disk theo từng bước (dùng cho Web Visualizer).
+    """
+
     logs = []
     frames = [] 
     
@@ -29,7 +45,16 @@ def external_sort_hybrid(input_path, output_path, ram_size, num_files, skip_visu
     current_run_data = []
 
     def capture_frame(msg, phase):
+        """
+        Hàm nội bộ: Chụp lại frame trạng thái của RAM và Disk tại thời điểm gọi.
+        
+        Parameters:
+            msg (str): Lời thoại giải thích hành động đang diễn ra tại khung hình này.
+            phase (str): Tên giai đoạn ("PHASE_1", "PHASE_2", "PHASE_2_FINAL").
+        """
+
         if skip_visualization: return 
+        
         active = [round(x[1], 2) for x in min_heap if x[0] == current_run_id]
         frozen = [round(x[1], 2) for x in min_heap if x[0] > current_run_id]
         
@@ -62,7 +87,7 @@ def external_sort_hybrid(input_path, output_path, ram_size, num_files, skip_visu
             run_id, val = heapq.heappop(min_heap)
 
             if run_id > current_run_id:
-                logs.append(f"-> Hoàn tất Run {current_run_id} (Dài {runs_metadata[current_run_id]['length']} số | Tại File {runs_metadata[current_run_id]['file_idx']})")
+                logs.append(f"--> Hoàn tất Run {current_run_id} (Dài {runs_metadata[current_run_id]['length']} số | Tại File {runs_metadata[current_run_id]['file_idx']})")
                 
                 if not skip_visualization: 
                     all_files_runs[current_run_id % num_files].append(current_run_data.copy())
@@ -91,14 +116,17 @@ def external_sort_hybrid(input_path, output_path, ram_size, num_files, skip_visu
                 curr_meta['data_cache'].append(round(val, 2))
 
             bytes_read = f_in.read(FLOAT_SIZE)
+            
             if bytes_read:
                 next_val = struct.unpack(FLOAT_FORMAT, bytes_read)[0]
                 next_run_id = current_run_id
+                
                 if next_val < last_written:
                     next_run_id += 1 
                     msg = f"Ghi {round(val,2)}. Đọc {round(next_val,2)} -> ĐÓNG BĂNG"
                 else:
                     msg = f"Ghi {round(val,2)}. Đọc {round(next_val,2)} -> HOẠT ĐỘNG"
+                
                 heapq.heappush(min_heap, (next_run_id, next_val))
                 capture_frame(msg, "PHASE_1")
 
@@ -205,12 +233,23 @@ def external_sort_hybrid(input_path, output_path, ram_size, num_files, skip_visu
     logs.append("-> Đã trộn thành công và xuất ra file đích!")
     return logs, frames
 
+# ==========================================
+# CÁC API FLASK CHO GIAO DIỆN WEB
+# ==========================================
 
 @app.route('/')
-def index(): return render_template('index.html')
+def index(): 
+    """Render giao diện chính của ứng dụng."""
+    return render_template('index.html')
 
 @app.route('/generate', methods=['POST'])
 def generate_random_file():
+    """
+    API Sinh dữ liệu ngẫu nhiên.
+    Sinh ra một tập tin nhị phân chứa các số thực ngẫu nhiên từ 0.0 đến 1000.0.
+    Trả về URL tải xuống tập tin vừa tạo.
+    """
+
     try:
         num_elements = int(request.json.get('num_elements', 15))
         filename = f"random_{num_elements}_elements.bin"
@@ -222,6 +261,14 @@ def generate_random_file():
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
+    """
+    API Xử lý tập tin tải lên và kích hoạt Thuật toán Sắp xếp ngoại.
+    - Nhận các thông số cấu hình: file, ram_size, num_files, is_auto_sector.
+    - Tính toán tự động kích thước RAM nếu cờ Auto Sector (512B) được bật.
+    - Gọi hàm `external_sort`.
+    - Trả về JSON chứa Logs hệ thống và Dữ liệu Visualizer (nếu số lượng không quá 40).
+    """
+
     if 'file' not in request.files: return jsonify({'error': 'Không tìm thấy file'}), 400
     file = request.files['file']
     if file.filename == '': return jsonify({'error': 'Chưa chọn file'}), 400
@@ -242,7 +289,7 @@ def upload_file():
         total_elements = os.path.getsize(input_path) // FLOAT_SIZE
         skip_viz = (total_elements > 40)
         
-        logs, frames = external_sort_hybrid(input_path, output_path, ram_size, num_files, skip_viz)
+        logs, frames = external_sort(input_path, output_path, ram_size, num_files, skip_viz)
         
         if is_auto_sector:
             logs.insert(0, f"[*] CHẾ ĐỘ PHẦN CỨNG BẬT: Kích thước Sector = 512 Bytes. Dữ liệu = 8 Bytes/số.")
@@ -254,13 +301,22 @@ def upload_file():
             'is_visualized': not skip_viz,
             'logs': '\n'.join(logs)
         })
+    
     except Exception as e: return jsonify({'error': str(e)}), 500
 
 @app.route('/download/<filename>')
-def download_file(filename): return send_file(os.path.join(UPLOAD_FOLDER, filename), as_attachment=True)
+def download_file(filename):
+    """
+    API Cung cấp đường dẫn tải xuống tập tin tĩnh (file kết quả hoặc file sinh ngẫu nhiên).
+    """
+    return send_file(os.path.join(UPLOAD_FOLDER, filename), as_attachment=True)
 
 @app.route('/read/<filename>')
 def read_binary_file(filename):
+    """
+    API Trích xuất dữ liệu nhị phân thành mảng số thực.
+    Dùng để phục vụ tính năng "Xem Dữ Liệu Gốc / Đã Sắp Xếp" trực tiếp trên giao diện trình duyệt.
+    """
     path = os.path.join(UPLOAD_FOLDER, filename)
     data = []
     try:
